@@ -56,7 +56,8 @@ type Adapter struct {
 	key           string
 
 	// etcd connection client
-	conn *client.Client
+	conn    *client.Client
+	timeOut time.Duration
 }
 
 func NewAdapter(etcdEndpoints []string, key string) *Adapter {
@@ -70,6 +71,7 @@ func newAdapter(etcdEndpoints []string, key string) *Adapter {
 	a := &Adapter{
 		etcdEndpoints: etcdEndpoints,
 		key:           key,
+		timeOut:       REQUESTTIMEOUT,
 	}
 	a.connect()
 
@@ -94,6 +96,10 @@ func (a *Adapter) connect() {
 	a.conn = connection
 }
 
+func (a *Adapter) SetTimeOut(t time.Duration) {
+	a.timeOut = t
+}
+
 // finalizer is the destructor for Adapter.
 func finalizer(a *Adapter) {
 	a.conn.Close()
@@ -106,7 +112,7 @@ func (a *Adapter) close() {
 // LoadPolicy loads all of policys from ETCD
 func (a *Adapter) LoadPolicy(model model.Model) error {
 	var rule CasbinRule
-	ctx, cancel := context.WithTimeout(context.Background(), REQUESTTIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeOut)
 	defer cancel()
 	getResp, err := a.conn.Get(ctx, a.getRootKey(), client.WithPrefix())
 	if err != nil {
@@ -178,7 +184,7 @@ func (a *Adapter) SavePolicy(model model.Model) error {
 
 // destroy or clean all of policy
 func (a *Adapter) destroy() error {
-	ctx, cancel := context.WithTimeout(context.Background(), REQUESTTIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeOut)
 	defer cancel()
 	_, err := a.conn.Delete(ctx, a.getRootKey(), client.WithPrefix())
 	return err
@@ -225,7 +231,7 @@ func (a *Adapter) convertRule(ptype string, line []string) (rule CasbinRule) {
 }
 
 func (a *Adapter) savePolicy(rules []CasbinRule) error {
-	ctx, cancel := context.WithTimeout(context.Background(), REQUESTTIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeOut)
 	defer cancel()
 	for _, rule := range rules {
 		ruleData, _ := json.Marshal(rule)
@@ -245,7 +251,7 @@ func (a *Adapter) constructPath(key string) string {
 // Part of the Auto-Save feature.
 func (a *Adapter) AddPolicy(sec string, ptype string, line []string) error {
 	rule := a.convertRule(ptype, line)
-	ctx, cancel := context.WithTimeout(context.Background(), REQUESTTIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeOut)
 	defer cancel()
 	ruleData, _ := json.Marshal(rule)
 	_, err := a.conn.Put(ctx, a.constructPath(rule.Key), string(ruleData))
@@ -256,7 +262,7 @@ func (a *Adapter) AddPolicy(sec string, ptype string, line []string) error {
 // Part of the Auto-Save feature.
 func (a *Adapter) RemovePolicy(sec string, ptype string, line []string) error {
 	rule := a.convertRule(ptype, line)
-	ctx, cancel := context.WithTimeout(context.Background(), REQUESTTIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeOut)
 	defer cancel()
 	_, err := a.conn.Delete(ctx, a.constructPath(rule.Key))
 	return err
@@ -340,7 +346,7 @@ func (a *Adapter) constructFilter(rule CasbinRule) string {
 }
 
 func (a *Adapter) removeFilteredPolicy(filter string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), REQUESTTIMEOUT)
+	ctx, cancel := context.WithTimeout(context.Background(), a.timeOut)
 	defer cancel()
 	// get all policy key
 	getResp, err := a.conn.Get(ctx, a.constructPath(""), client.WithPrefix(), client.WithKeysOnly())
